@@ -1,5 +1,7 @@
 #include QMK_KEYBOARD_H
 
+#include "raw_hid.h"
+
 enum ctrl_keycodes {
     U_T_AUTO = SAFE_RANGE, //USB Extra Port Toggle Auto Detect / Always Active
     U_T_AGCR,              //USB Toggle Automatic GCR control
@@ -43,20 +45,59 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 
 // Runs just one time when the keyboard initializes.
 void matrix_init_user(void) {
+    rgb_matrix_set_flags(LED_FLAG_UNDERGLOW);
+    rgb_matrix_set_color_all(0, 0, 0);
 };
 
 // Runs constantly in the background, in a loop.
 void matrix_scan_user(void) {
 };
 
+int override_key = -1;
+
+void rgb_matrix_indicators_user() {
+    if (override_key >= 0) {
+        rgb_matrix_set_color(override_key, RGB_RED);
+    }
+}
+
+void raw_hid_receive(uint8_t *data, uint8_t length) {
+    if (length != 64) {
+        return;
+    }
+    // packet decode
+    // 0: must be 0 (endpoint?)
+    // 1: version (0)
+    // 2: function string length (must be 0)
+    // 2+(*2)+1..3: byte: rgb
+    rgb_matrix_set_color(0, data[3], data[4], data[5]);
+    rgb_matrix_set_color(15, data[3], data[4], data[5]);
+}
+
 #define MODS_SHIFT  (get_mods() & MOD_BIT(KC_LSHIFT) || get_mods() & MOD_BIT(KC_RSHIFT))
 #define MODS_CTRL  (get_mods() & MOD_BIT(KC_LCTL) || get_mods() & MOD_BIT(KC_RCTRL))
 #define MODS_ALT  (get_mods() & MOD_BIT(KC_LALT) || get_mods() & MOD_BIT(KC_RALT))
 
+static uint8_t zoom_toggle[] = "in xanadu did kublai khan a stately pleasure dome decree";
+
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     static uint32_t key_timer;
 
+    override_key = g_led_config.matrix_co[record->event.key.row][record->event.key.col];
     switch (keycode) {
+        case KC_PAUS: // Zoom mute/unmute
+            if (record->event.pressed) {
+                // always send the toggle on keypress
+                raw_hid_send(zoom_toggle, RAW_EPSIZE);
+                key_timer = timer_read32();
+            } else {
+                if (timer_elapsed32(key_timer) >= 500) {
+                    // send the toggle on release as well if key has been held down PTT-style (>500ms)
+                    raw_hid_send(zoom_toggle, RAW_EPSIZE);
+                }
+                // but if it was just a tap on the key, don't send another toggle on the release
+            }
+            return false;
         case U_T_AUTO:
             if (record->event.pressed && MODS_SHIFT && MODS_CTRL) {
                 TOGGLE_FLAG_AND_PRINT(usb_extra_manual, "USB extra port manual mode");
