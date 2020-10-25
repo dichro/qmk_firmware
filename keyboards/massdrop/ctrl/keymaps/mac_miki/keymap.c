@@ -53,16 +53,11 @@ void matrix_init_user(void) {
 void matrix_scan_user(void) {
 };
 
-int override_key = -1;
-
 void rgb_matrix_indicators_user() {
-    if (override_key >= 0) {
-        rgb_matrix_set_color(override_key, RGB_RED);
-    }
 }
 
 void raw_hid_receive(uint8_t *data, uint8_t length) {
-    if (length != 64) {
+    if (length < 6) {
         return;
     }
     // packet decode
@@ -70,7 +65,6 @@ void raw_hid_receive(uint8_t *data, uint8_t length) {
     // 1: version (0)
     // 2: function string length (must be 0)
     // 2+(*2)+1..3: byte: rgb
-    rgb_matrix_set_color(0, data[3], data[4], data[5]);
     rgb_matrix_set_color(15, data[3], data[4], data[5]);
 }
 
@@ -83,7 +77,10 @@ static uint8_t zoom_toggle[] = "in xanadu did kublai khan a stately pleasure dom
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     static uint32_t key_timer;
 
-    override_key = g_led_config.matrix_co[record->event.key.row][record->event.key.col];
+    if (keycode != KC_PAUS) {
+        int led = g_led_config.matrix_co[record->event.key.row][record->event.key.col];
+        rgb_matrix_set_color(led, RGB_RED);
+    }
     switch (keycode) {
         case KC_PAUS: // Zoom mute/unmute
             if (record->event.pressed) {
